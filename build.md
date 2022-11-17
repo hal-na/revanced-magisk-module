@@ -8,7 +8,7 @@ Patches: revanced-patches-2.111.0.jar
 
   
 **App Versions:**  
-Music (arm64-v8a): 5.31.50  
 YouTube: 17.43.36  
+Music (arm64-v8a): 5.31.50  
 
 [revanced-magisk-module](https://github.com/j-hc/revanced-magisk-module)  
