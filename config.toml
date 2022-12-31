@@ -23,7 +23,6 @@ merge-integrations = true
 rip-libs = true
 
 [Music-arm64]
-enabled = true
 build-mode = "module"
 app-name = "Music"
 excluded-patches = "compact-header"
