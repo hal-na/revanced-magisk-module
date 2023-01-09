@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 
-source semver
-
 MODULE_TEMPLATE_DIR="revanced-magisk"
 MODULE_SCRIPTS_DIR="scripts"
 TEMP_DIR="temp"
 BUILD_DIR="build"
-PKGS_LIST="temp/module-pkgs"
+PKGS_LIST="${TEMP_DIR}/module-pkgs"
 
-GITHUB_REPOSITORY=${GITHUB_REPOSITORY:-$"j-hc/revanced-magisk-module"}
+if [ "${GITHUB_TOKEN+x}" ]; then
+	GH_AUTH_HEADER="Authorization: token ${GITHUB_TOKEN}"
+else
+	GH_AUTH_HEADER=""
+fi
+GITHUB_REPOSITORY=${GITHUB_REPOSITORY:-"j-hc/revanced-magisk-module"}
 NEXT_VER_CODE=${NEXT_VER_CODE:-$(date +'%Y%m%d')}
 WGET_HEADER="User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:108.0) Gecko/20100101 Firefox/108.0"
 DRYRUN=false
@@ -17,16 +20,9 @@ SERVICE_SH=$(cat $MODULE_SCRIPTS_DIR/service.sh)
 CUSTOMIZE_SH=$(cat $MODULE_SCRIPTS_DIR/customize.sh)
 UNINSTALL_SH=$(cat $MODULE_SCRIPTS_DIR/uninstall.sh)
 
-json_get() {
-	grep -o "\"${1}\":[^\"]*\"[^\"]*\"" | sed -E 's/".*".*"(.*)"/\1/'
-}
-
-toml_prep() {
-	__TOML__=$(echo "$1" | tr -d '\t\r' | tr "'" '"' | grep -o '^[^#]*' | grep -v '^$' | sed -r 's/(\".*\")|\s*/\1/g')
-}
-toml_get_all_tables() {
-	echo "$__TOML__" | grep -x '\[.*\]' | tr -d '[]' || return 1
-}
+json_get() { grep -o "\"${1}\":[^\"]*\"[^\"]*\"" | sed -E 's/".*".*"(.*)"/\1/'; }
+toml_prep() { __TOML__=$(echo "$1" | tr -d '\t\r' | tr "'" '"' | grep -o '^[^#]*' | grep -v '^$' | sed -r 's/(\".*\")|\s*/\1/g'); }
+toml_get_all_tables() { echo "$__TOML__" | grep -x '\[.*\]' | tr -d '[]' || return 1; }
 toml_get() {
 	local table=$1 key=$2
 	val=$(echo "$__TOML__" | sed -n "/\[${table}]/,/^\[.*]$/p" | grep "^${key}=")
@@ -35,7 +31,6 @@ toml_get() {
 
 #shellcheck disable=SC2034
 read_main_config() {
-	MOUNT_DELAY=$(toml_get "main-config" mount-delay)
 	COMPRESSION_LEVEL=$(toml_get "main-config" compression-level)
 	ENABLE_MAGISK_UPDATE=$(toml_get "main-config" enable-magisk-update)
 	PARALLEL_JOBS=$(toml_get "main-config" parallel-jobs)
@@ -45,17 +40,17 @@ read_main_config() {
 
 get_prebuilts() {
 	echo "Getting prebuilts"
-	RV_CLI_URL=$(req https://api.github.com/repos/j-hc/revanced-cli/releases/latest - | json_get 'browser_download_url')
+	RV_CLI_URL=$(gh_req https://api.github.com/repos/j-hc/revanced-cli/releases/latest - | json_get 'browser_download_url')
 	RV_CLI_JAR="${TEMP_DIR}/${RV_CLI_URL##*/}"
 	log "CLI: ${RV_CLI_URL##*/}"
 
-	RV_INTEGRATIONS_URL=$(req https://api.github.com/repos/revanced/revanced-integrations/releases/latest - | json_get 'browser_download_url')
+	RV_INTEGRATIONS_URL=$(gh_req https://api.github.com/repos/revanced/revanced-integrations/releases/latest - | json_get 'browser_download_url')
 	RV_INTEGRATIONS_APK=${RV_INTEGRATIONS_URL##*/}
 	RV_INTEGRATIONS_APK="${RV_INTEGRATIONS_APK%.apk}-$(cut -d/ -f8 <<<"$RV_INTEGRATIONS_URL").apk"
 	log "Integrations: $RV_INTEGRATIONS_APK"
 	RV_INTEGRATIONS_APK="${TEMP_DIR}/${RV_INTEGRATIONS_APK}"
 
-	RV_PATCHES=$(req https://api.github.com/repos/revanced/revanced-patches/releases/latest -)
+	RV_PATCHES=$(gh_req https://api.github.com/repos/revanced/revanced-patches/releases/latest -)
 	RV_PATCHES_CHANGELOG=$(echo "$RV_PATCHES" | json_get 'body' | sed 's/\(\\n\)\+/\\n/g')
 	RV_PATCHES_URL=$(echo "$RV_PATCHES" | json_get 'browser_download_url' | grep 'jar')
 	RV_PATCHES_JAR="${TEMP_DIR}/${RV_PATCHES_URL##*/}"
@@ -88,17 +83,41 @@ set_prebuilts() {
 }
 
 req() { wget -nv -O "$2" --header="$WGET_HEADER" "$1"; }
+gh_req() { wget -nv -O "$2" --header="$GH_AUTH_HEADER" "$1"; }
 log() { echo -e "$1  " >>build.md; }
 get_largest_ver() {
 	local max=0
-	while read -r v || [ -n "$v" ]; do
-		#shellcheck disable=SC2001
-		if [ "$(command_compare "$(sed 's/\./-/3' <<<"$v")" "$(sed 's/\./-/3' <<<"$max")")" = 1 ]; then max=$v; fi
+	while read -r v; do
+		if [ "$max" != 0 ] && ! semver_validate "$max" "$v"; then return 0; fi
+		if [ "$(semver_cmp "$max" "$v")" = 1 ]; then max=$v; fi
 	done
-	if [[ $max != 0 ]]; then echo "$max"; fi
+	if [ "$max" != 0 ]; then echo "$max"; fi
 }
 get_patch_last_supported_ver() {
-	unzip -p "$RV_PATCHES_JAR" | strings -s , | sed -rn "s/.*${1},versions,(([0-9.]*,*)*),Lk.*/\1/p" | tr ',' '\n' | get_largest_ver
+	local vs
+	vs=$(unzip -p "$RV_PATCHES_JAR" | strings -s , | sed -rn "s/.*${1},versions,(([0-9.]*,*)*),Lk.*/\1/p" | tr ',' '\n')
+	printf "%s\n" "$vs" | get_largest_ver
+}
+semver_cmp() {
+	local IFS=.
+	read -r -a v1 <<<"${1//[^.0-9]/}"
+	read -r -a v2 <<<"${2//[^.0-9]/}"
+	for i in ${!v1[*]}; do
+		if ((v1[i] > v2[i])); then
+			echo -1
+			return 0
+		elif ((v2[i] > v1[i])); then
+			echo 1
+			return 0
+		fi
+	done
+	echo 0
+}
+semver_validate() {
+	local a1="${1%-*}" a2="${2%-*}"
+	local c1="${a1//[^.]/}" c2="${a2//[^.]/}"
+	local a1c="${a1//[.0-9]/}" a2c="${a2//[.0-9]/}"
+	[ ${#c1} = ${#c2} ] && [ ${#a1c} = 0 ] && [ ${#a2c} = 0 ]
 }
 
 dl_if_dne() {
@@ -131,18 +150,12 @@ get_apkmirror_vers() {
 	vers=$(req "https://www.apkmirror.com/uploads/?appcategory=${apkmirror_category}" - | sed -n 's;.*Version:</span><span class="infoSlide-value">\(.*\) </span>.*;\1;p')
 	if [ "$allow_alpha_version" = false ]; then grep -i -v -e "beta" -e "alpha" <<<"$vers"; else echo "$vers"; fi
 }
-get_apkmirror_pkg_name() {
-	req "$1" - | sed -n 's;.*id=\(.*\)" class="accent_color.*;\1;p'
-}
+get_apkmirror_pkg_name() { req "$1" - | sed -n 's;.*id=\(.*\)" class="accent_color.*;\1;p'; }
 # ------------------------------
 
 # ------- uptodown -------------
-get_uptodown_resp() {
-	req "https://${1}.en.uptodown.com/android/versions" -
-}
-get_uptodown_vers() {
-	echo "$1" | grep -x '^[0-9.]* <span>.*</span>' | sed 's/ <s.*//'
-}
+get_uptodown_resp() { req "https://${1}.en.uptodown.com/android/versions" -; }
+get_uptodown_vers() { echo "$1" | grep -x '^[0-9.]* <span>.*</span>' | sed 's/ <s.*//'; }
 dl_uptodown() {
 	local uptwod_resp=$1 version=$2 output=$3
 	url=$(echo "$uptwod_resp" | grep "${version} <span>" -B 1 | head -1 | sed -n 's;.*data-url="\(.*\)".*;\1;p')
@@ -172,9 +185,9 @@ zip_module() {
 	local patched_apk=$1 module_name=$2 stock_apk=$3 pkg_name=$4 template_dir=$5
 	cp -f "$patched_apk" "${template_dir}/base.apk"
 	cp -f "$stock_apk" "${template_dir}/${pkg_name}.apk"
-	cd "$template_dir" || abort "Module template dir not found"
+	pushd "$template_dir" || abort "Module template dir not found"
 	zip -"$COMPRESSION_LEVEL" -FSr "../../${BUILD_DIR}/${module_name}" .
-	cd ../..
+	popd || :
 }
 
 build_rv() {
@@ -249,7 +262,7 @@ build_rv() {
 			echo "ERROR: empty version"
 			return 1
 		fi
-		echo "Choosing version '${version}'"
+		echo "Choosing version '${version}' (${args[app_name]})"
 
 		local stock_apk="${TEMP_DIR}/${app_name_l}-stock-v${version}-${arch}.apk"
 		local apk_output="${BUILD_DIR}/${app_name_l}-revanced-v${version}-${arch}.apk"
@@ -319,7 +332,7 @@ build_rv() {
 }
 
 join_args() {
-	echo "$1" | tr -d '\t\r' | tr ' ' '\n' | grep -v '^$' | sed "s/^/${2} /" | paste -sd " " - || echo ""
+	echo "$1" | tr -d '\t\r' | tr ' ' '\n' | grep -v '^$' | sed "s/^/${2} /" | paste -sd " " - || :
 }
 
 uninstall_sh() { echo "${UNINSTALL_SH//__PKGNAME/$1}" >"${2}/uninstall.sh"; }
@@ -328,8 +341,7 @@ customize_sh() {
 	echo "${s//__PKGVER/$2}" >"${3}/customize.sh"
 }
 service_sh() {
-	local s="${SERVICE_SH//__MNTDLY/$MOUNT_DELAY}"
-	s="${s//__PKGNAME/$1}"
+	local s="${SERVICE_SH//__PKGNAME/$1}"
 	echo "${s//__PKGVER/$2}" >"${3}/service.sh"
 }
 module_prop() {
