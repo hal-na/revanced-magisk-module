@@ -9,8 +9,8 @@ build-mindetach-module = true
 [YouTube]
 enabled = true
 build-mode = "both" # 'both', 'apk' or 'module'
-excluded-patches = "debugging" # whitespace seperated list of patches to exclude (multiline strings are not supported)
-included-patches = "" # whitespace seperated list of patches to include
+excluded-patches = "always-autorepeat client-spoof comments copy-video-url custom-branding custom-video-buffer custom-video-speed debugging disable-auto-captions disable-auto-player-popup-panels disable-fullscreen-panels disable-startup-shorts-player disable-zoom-haptics downloads enable-wide-searchbar hdr-auto-brightness hide-album-cards hide-artist-card hide-autoplay-button hide-breaking-news-shelf hide-captions-button hide-cast-button hide-create-button hide-crowdfunding-box hide-email-address hide-endscreen-cards hide-info-cards hide-my-mix hide-player-buttons hide-shorts-button hide-time-and-seekbar hide-video-action-buttons hide-watch-in-vr hide-watermark old-quality-layout open-links-directly open-links-externally remember-playback-rate remember-video-quality remove-player-button-background return-youtube-dislike seekbar-tapping sponsorblock spoof-app-version swipe-controls tablet-mini-player theme" # whitespace seperated list of patches to exclude (multiline strings are not supported)
+included-patches = "general-ads minimized-playback premium-heading video-ads" # whitespace seperated list of patches to include
 version = "auto" # 'auto', 'latest' or a custom one like '17.40.41'
 exclusive-patches = false # excludes all patches by default
 apkmirror-dlurl = "https://www.apkmirror.com/apk/google-inc/youtube/"
@@ -19,14 +19,15 @@ module-prop-name = "ytrv-magisk"
 [Music-arm64]
 build-mode = "both"
 app-name = "Music"
-excluded-patches = ""
-included-patches = ""
+excluded-patches = "compact-header"
+included-patches = "background-play codecs-unlock exclusive-audio-playback hide-get-premium minimized-playback-music music-video-ads tasteBuilder-remover upgrade-button-remover"
 version = "auto"
 apkmirror-dlurl = "https://www.apkmirror.com/apk/google-inc/youtube-music/"
 module-prop-name = "ytmusicrv-magisk"
 arch = "arm64-v8a"
 
 [Music-arm]
+enabled = false
 build-mode = "both"
 app-name = "Music"
 excluded-patches = ""
@@ -37,22 +38,26 @@ module-prop-name = "ytmusicrv-arm-magisk"
 arch = "arm-v7a"
 
 [Twitter]
+enabled = false
 build-mode = "apk"
 excluded-patches = ""
 version = "auto"
 apkmirror-dlurl = "https://www.apkmirror.com/apk/twitter-inc/twitter/"
 
 [Reddit]
+enabled = false
 build-mode = "apk"
 version = "auto"
 apkmirror-dlurl = "https://www.apkmirror.com/apk/redditinc/reddit/"
 
 [Twitch]
+enabled = false
 build-mode = "apk"
 version = "auto"
 apkmirror-dlurl = "https://www.apkmirror.com/apk/twitch-interactive-inc/twitch/"
 
 [TikTok]
+enabled = false
 version = "auto"
 apkmirror-dlurl = "https://www.apkmirror.com/apk/tiktok-pte-ltd/tik-tok-including-musical-ly/"
 
